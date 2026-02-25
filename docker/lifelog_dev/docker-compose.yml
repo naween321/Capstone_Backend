@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: lifelog_db_dev
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    env_file:
+      - ../../.env
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifelog_db_user -d lifelog_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgweb:
+    image: sosedoff/pgweb
+    container_name: ts_user_pgweb_dev
+    ports:
+      - "8081:8081"
+    env_file:
+      - ../../.env
+    environment:
+      - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../../  # Point to project root
+      dockerfile: docker/lifelog_dev/Dockerfile
+    container_name: lifelog_web_dev
+    command: uv run python manage.py runserver 0.0.0.0:8001
+    ports:
+      - "8001:8001"
+    env_file:
+      - ../../.env  # Point to root .env
+    environment:
+      - DJANGO_ENV=dev
+    depends_on:
+      db:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../../:/app
+
+volumes:
+  postgres_data_dev:
