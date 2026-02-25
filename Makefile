@@ -1,8 +1,8 @@
 # Makefile for LifeLog Django Project
 
 # Variables
-DEV_COMPOSE = docker-compose --env-file .env -f docker/lifelog_dev/docker-compose.yml
-PROD_COMPOSE = docker-compose --env-file .env -f docker/lifelog_prod/docker-compose.yml
+DEV_COMPOSE = docker compose --env-file .env -f docker/lifelog_dev/docker-compose.yml
+PROD_COMPOSE = docker compose --env-file .env -f docker/lifelog_prod/docker-compose.yml
 
 # Default target (runs when you type just 'make')
 .DEFAULT_GOAL := help
