@@ -36,3 +36,7 @@ dist/
 
 .DS_Store
 Thumbs.db
+serviceAccountKey.json
+celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal

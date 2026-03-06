@@ -37,3 +37,20 @@ class UUIDBaseModel(BaseModel):
 
     class Meta(BaseModel.Meta):
         abstract = True
+
+
+class DeviceToken(TimeStampModel):
+    PLATFORM_CHOICES = [
+        ('android', 'Android'),
+        ('ios', 'iOS'),
+        ('web', 'Web'),
+    ]
+    token = models.TextField(unique=True)
+    platform = models.CharField(max_length=10, choices=PLATFORM_CHOICES)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.platform} ({self.token[:20]}...)"

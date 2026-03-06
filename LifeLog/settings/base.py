@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from datetime import timedelta
 
@@ -12,7 +13,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 
-LOCAL_APPS = ['apps.user', 'apps.authentication', ]
+LOCAL_APPS = ['apps.user', 'apps.authentication', 'apps.commons']
 THIRD_PARTY_APPS = ['rest_framework', ]
 INSTALLED_APPS += THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -114,3 +115,12 @@ SPECTACULAR_SETTINGS = {
         }
     },
 }
+
+
+# Firebase Settings
+FIREBASE_CREDENTIALS_PATH = os.path.join(BASE_DIR, 'serviceAccountKey.json')
+
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_TIMEZONE = 'America/New_York'
+CELERY_ENABLE_UTC = True
