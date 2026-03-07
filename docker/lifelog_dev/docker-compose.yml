@@ -75,7 +75,7 @@ services:
       context: ../../
       dockerfile: docker/lifelog_dev/Dockerfile
     container_name: lifelog_celery_worker_dev
-    command: celery -A LifeLog worker --loglevel=info
+    command: celery -A LifeLog worker --concurrency=1 --loglevel=info
     env_file:
       - ../../.env
     environment:
