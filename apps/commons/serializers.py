@@ -29,3 +29,8 @@ class ScheduleTodoSerializer(serializers.Serializer):
     notification = serializers.CharField()
     date_time = serializers.DateTimeField()
     device_id = serializers.IntegerField()
+
+
+class AnalyzeMoodSerializer(serializers.Serializer):
+    mood = serializers.CharField()
+    description = serializers.CharField()

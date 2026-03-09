@@ -8,9 +8,11 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from groq import Groq
+from drf_spectacular.utils import extend_schema
+
 
 from .models import DeviceToken
-from .serializers import DeviceTokenSerializer, ScheduleTodoSerializer
+from .serializers import DeviceTokenSerializer, ScheduleTodoSerializer, AnalyzeMoodSerializer
 from .firebase import send_multicast_notification, send_scheduled_notification
 
 
@@ -104,3 +106,31 @@ class DailyQuoteView(APIView):
         return Response({
             "quote": chat_completion.choices[0].message.content
         })
+
+
+class AnalyzeMoodView(APIView):
+
+    @extend_schema(
+        request=AnalyzeMoodSerializer,
+        description="Analyze user mood and return a comforting message"
+    ) # This extend schema is just for the Swagger view to display DTO
+    def post(self, *args, **kwargs):
+        ser = AnalyzeMoodSerializer(data=self.request.data)
+        if ser.is_valid():
+            client = Groq(api_key=settings.GROQ_API_KEY)
+            mood = ser.validated_data['mood']
+            description = ser.validated_data['description']
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "user",
+                     "content": f"The user's mood is {mood} and the explanation the user has given is "
+                                f"'{description}'. Acknowledge this user's information and Based on this information, "
+                                f"give a comfort message to the user in "
+                                f"around 50-60 words so that the user would be more cheerful"}
+                ],
+                model="llama-3.3-70b-versatile",
+            )
+            return Response({
+                "message": chat_completion.choices[0].message.content
+            })
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
