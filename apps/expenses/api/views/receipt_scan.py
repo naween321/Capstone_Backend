@@ -57,13 +57,11 @@ def _call_veryfi(uploaded_file):
     }
     file_bytes = uploaded_file.read()
     files = {'file': (uploaded_file.name, file_bytes, uploaded_file.content_type)}
-    data = {'async_mode': 'false'}
 
     response = requests.post(
         veryfi_url,
         headers=headers,
         files=files,
-        data=data,
         timeout=30,
     )
     return response.json() if response.headers.get('Content-Type', '').startswith('application/json') else {}, response.status_code
