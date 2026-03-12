@@ -13,7 +13,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 
-LOCAL_APPS = ['apps.user', 'apps.authentication', 'apps.commons', 'apps.expenses']
+LOCAL_APPS = ['apps.user', 'apps.authentication', 'apps.commons', 'apps.expenses', 'apps.notifications']
 THIRD_PARTY_APPS = ['rest_framework', ]
 INSTALLED_APPS += THIRD_PARTY_APPS + LOCAL_APPS
 
