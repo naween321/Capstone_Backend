@@ -139,6 +139,23 @@ Modify values according to your local setup.
 
 ---
 
+### Set up Firebase (Push Notifications)
+
+The backend uses Firebase Cloud Messaging (FCM) to send push notifications.
+A Firebase service account key file is required.
+
+1. Go to the [Firebase Console](https://console.firebase.google.com/)
+2. Select the **lifelog-capstone** project
+3. Navigate to **Project Settings > Service accounts**
+4. Click **Generate new private key** and download the JSON file
+5. Rename it to `serviceAccountKey.json`
+6. Place it in the project root directory (`Capstone_Backend/serviceAccountKey.json`)
+
+> **Note:** This file is listed in `.gitignore` and must never be committed.
+> The path is configured in `LifeLog/settings/base.py`.
+
+---
+
 # 🐳 Docker & Database Setup
 
 All operational commands are defined inside the `Makefile`.
@@ -194,6 +211,7 @@ Once running:
 LifeLog/
 │
 ├── .env
+├── serviceAccountKey.json    # Firebase credentials (gitignored)
 ├── Makefile
 ├── docker
     ├── lifelog_dev

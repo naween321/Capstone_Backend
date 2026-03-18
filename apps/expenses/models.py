@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 
 from apps.commons.models import TimeStampModel
@@ -28,3 +30,30 @@ class QuotaRecord(TimeStampModel):
 
     def __str__(self):
         return f"QuotaRecord {self.month_key}: {self.count}"
+
+
+class ReceiptScanJob(TimeStampModel):
+    """Tracks asynchronous receipt scan execution and progress."""
+
+    class Status(models.TextChoices):
+        QUEUED = 'queued', 'Queued'
+        UPLOADING = 'uploading', 'Uploading'
+        PROCESSING = 'processing', 'Processing'
+        RECEIVING = 'receiving', 'Receiving'
+        COMPLETED = 'completed', 'Completed'
+        FAILED = 'failed', 'Failed'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
+    progress = models.FloatField(default=0.0)
+    error_message = models.TextField(blank=True)
+    result = models.JSONField(default=dict)
+    image_filename = models.CharField(max_length=255, blank=True)
+    mime_type = models.CharField(max_length=100, blank=True)
+    stored_file_path = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"ReceiptScanJob {self.id} ({self.status})"

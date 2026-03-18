@@ -1,5 +1,8 @@
 import logging
-from datetime import datetime, date
+import os
+import uuid
+from datetime import datetime
+from pathlib import Path
 
 import requests
 from django.conf import settings
@@ -11,7 +14,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.expenses.api.permissions import PrototypeAppKeyPermission
-from apps.expenses.models import QuotaRecord, ReceiptScan
+from apps.expenses.models import QuotaRecord, ReceiptScan, ReceiptScanJob
+from apps.expenses.tasks import process_receipt_scan_job
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +29,12 @@ ALLOWED_MIME_TYPES = {
 }
 MIN_FILE_SIZE = 250          # bytes
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+
+
+def _scan_tmp_root():
+    root = Path(settings.BASE_DIR) / 'tmp' / 'receipt_scan_jobs'
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def _get_client_ip(request):
@@ -193,6 +203,127 @@ class ReceiptScanView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class ReceiptScanJobCreateView(APIView):
+    permission_classes = [PrototypeAppKeyPermission]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        ip = _get_client_ip(request)
+
+        if not _check_rate_limit(ip):
+            logger.warning('[SCAN JOB] rate limit exceeded ip=%s', ip)
+            return Response(
+                {'error': 'Too many requests. Please wait before scanning again.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response(
+                {'error': 'No file provided. Send the image as multipart field "file".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        content_type = uploaded_file.content_type or ''
+        if content_type not in ALLOWED_MIME_TYPES:
+            return Response(
+                {'error': f'Unsupported file type "{content_type}". Send a JPEG, PNG, WebP, GIF, or HEIC image.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        file_size = uploaded_file.size
+        if file_size < MIN_FILE_SIZE:
+            return Response(
+                {'error': f'File too small ({file_size} bytes). Minimum is {MIN_FILE_SIZE} bytes.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if file_size > MAX_FILE_SIZE:
+            return Response(
+                {'error': f'File too large ({file_size / 1024 / 1024:.1f} MB). Maximum is 20 MB.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        month_key = _current_month_key()
+        quota, _ = QuotaRecord.objects.get_or_create(month_key=month_key)
+        limit = settings.EXPENSE_SCAN_MONTHLY_QUOTA
+        if quota.count >= limit:
+            logger.warning('[SCAN JOB] quota exceeded month=%s count=%d', month_key, quota.count)
+            return Response(
+                {
+                    'error': f'Monthly scan quota of {limit} documents reached.',
+                    'quota': {
+                        'limit': limit,
+                        'used': quota.count,
+                        'remaining': 0,
+                        'monthKey': month_key,
+                    },
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        job_id = uuid.uuid4()
+        safe_name = os.path.basename(uploaded_file.name or 'receipt.jpg')
+        file_path = _scan_tmp_root() / f'{job_id}_{safe_name}'
+
+        with open(file_path, 'wb') as dest:
+            for chunk in uploaded_file.chunks():
+                dest.write(chunk)
+
+        job = ReceiptScanJob.objects.create(
+            id=job_id,
+            status=ReceiptScanJob.Status.QUEUED,
+            progress=0.05,
+            image_filename=safe_name,
+            mime_type=content_type,
+            stored_file_path=str(file_path),
+        )
+
+        try:
+            process_receipt_scan_job.delay(str(job.id))
+        except Exception as exc:
+            logger.exception('[SCAN JOB] queueing failed id=%s err=%s', job.id, exc)
+            job.status = ReceiptScanJob.Status.FAILED
+            job.progress = 1.0
+            job.error_message = 'Could not queue receipt scan job. Ensure Celery worker is running.'
+            job.save(update_fields=['status', 'progress', 'error_message', 'updated_at'])
+            return Response(
+                {'error': job.error_message},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response(
+            {
+                'jobId': str(job.id),
+                'status': job.status,
+                'progress': job.progress,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class ReceiptScanJobStatusView(APIView):
+    permission_classes = [PrototypeAppKeyPermission]
+
+    def get(self, request, job_id):
+        try:
+            job = ReceiptScanJob.objects.get(id=job_id)
+        except ReceiptScanJob.DoesNotExist:
+            return Response({'error': 'Scan job not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        body = {
+            'jobId': str(job.id),
+            'status': job.status,
+            'progress': float(job.progress),
+        }
+
+        if job.status == ReceiptScanJob.Status.FAILED:
+            body['error'] = job.error_message or 'Receipt scan failed.'
+        if job.status == ReceiptScanJob.Status.COMPLETED:
+            body['result'] = job.result
+
+        return Response(body, status=status.HTTP_200_OK)
 
 
 class QuotaView(APIView):
