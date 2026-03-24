@@ -12,6 +12,106 @@ from apps.expenses.models import QuotaRecord, ReceiptScan, ReceiptScanJob
 logger = logging.getLogger(__name__)
 
 
+# Map Veryfi section/category strings to our category constants.
+_VERYFI_SECTION_MAP = {
+    'GROCERY': 'GROCERY',
+    'PRODUCE': 'GROCERY',
+    'MEAT': 'GROCERY',
+    'SEAFOOD': 'GROCERY',
+    'DELI': 'GROCERY',
+    'DAIRY': 'GROCERY',
+    'FROZEN': 'GROCERY',
+    'BAKERY': 'GROCERY',
+    'BEVERAGES': 'GROCERY',
+    'BEVERAGE': 'GROCERY',
+    'SNACKS': 'GROCERY',
+    'BULK': 'GROCERY',
+    'FLORAL': 'GROCERY',
+    'HOUSEHOLD': 'HOUSEHOLD',
+    'CLEANING': 'HOUSEHOLD',
+    'PAPER': 'HOUSEHOLD',
+    'HEALTH': 'PHARMACY',
+    'PHARMACY': 'PHARMACY',
+    'HEALTH & BEAUTY': 'BEAUTY_CARE',
+    'BEAUTY': 'BEAUTY_CARE',
+    'PERSONAL CARE': 'BEAUTY_CARE',
+    'CLOTHING': 'CLOTHING',
+    'APPAREL': 'CLOTHING',
+    'ELECTRONICS': 'ELECTRONICS',
+    'HOME DECOR': 'HOME_DECOR',
+    'HOME': 'HOME_DECOR',
+    'RESTAURANT': 'DINING',
+    'DINING': 'DINING',
+    'PET': 'PET_SUPPLIES',
+    'PET SUPPLIES': 'PET_SUPPLIES',
+    'AUTOMOTIVE': 'FUEL_AUTO',
+    'FUEL': 'FUEL_AUTO',
+    'AUTO': 'FUEL_AUTO',
+    'TRAVEL': 'TRAVEL',
+    'TAX': 'FEES_TAX',
+    'FEES': 'FEES_TAX',
+    'KIDS': 'KIDS',
+    'BABY': 'KIDS',
+    'BOOKS': 'BOOKS_OFFICE',
+    'OFFICE': 'BOOKS_OFFICE',
+}
+
+
+def _map_veryfi_category(section):
+    """Map a Veryfi section string to one of our category constants."""
+    if section:
+        normalized = section.strip().upper()
+        if normalized in _VERYFI_SECTION_MAP:
+            return _VERYFI_SECTION_MAP[normalized]
+    return ''
+
+
+def _is_weight_descriptor(item):
+    """Return True for Veryfi weight-detail rows (e.g. '1.35 Lb @ 1.99 /Lb').
+
+    These are sub-rows generated when a produce item is sold by weight.
+    They have no description/full_description and carry a unit_of_measure.
+    """
+    has_description = bool(item.get('description') or item.get('full_description'))
+    has_uom = bool(item.get('unit_of_measure'))
+    return has_uom and not has_description
+
+
+def _extract_line_items(veryfi_data):
+    """Extract line items from a Veryfi response dict.
+
+    Returns a list of dicts with receiptAcronym, decodedName, category,
+    price, and scanOrder — matching the Flutter ReceiptLineItem model.
+    Weight-only descriptor rows are excluded.
+    """
+    raw_items = veryfi_data.get('line_items') or []
+    result = []
+    scan_order = 1
+    for item in raw_items:
+        if _is_weight_descriptor(item):
+            continue
+
+        description = (
+            item.get('description')
+            or item.get('full_description')
+            or item.get('text')
+            or 'Unknown Item'
+        )
+        acronym = (item.get('text') or item.get('sku') or description).strip().upper()
+        total = item.get('total') or item.get('price') or 0.0
+        category = _map_veryfi_category(item.get('section'))
+
+        result.append({
+            'receiptAcronym': acronym,
+            'decodedName': description.strip(),
+            'category': category,
+            'price': float(total) if total else 0.0,
+            'scanOrder': scan_order,
+        })
+        scan_order += 1
+    return result
+
+
 def _parse_date(raw):
     if not raw:
         return None
@@ -108,6 +208,8 @@ def process_receipt_scan_job(self, job_id):
         parsed_date = _parse_date(raw_date)
         veryfi_category = veryfi_data.get('category') or veryfi_data.get('default_category')
 
+        line_items = _extract_line_items(veryfi_data)
+
         ReceiptScan.objects.create(
             veryfi_document_id=veryfi_id,
             vendor=vendor,
@@ -126,6 +228,7 @@ def process_receipt_scan_job(self, job_id):
             'vendor': vendor,
             'veryfiCategory': veryfi_category,
             'veryfiDocumentId': veryfi_id,
+            'lineItems': line_items,
             'quota': {
                 'limit': limit,
                 'used': used,

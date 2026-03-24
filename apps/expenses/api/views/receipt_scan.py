@@ -89,6 +89,9 @@ def _parse_date(raw):
     return None
 
 
+from apps.expenses.tasks import _extract_line_items  # shared implementation
+
+
 class ReceiptScanView(APIView):
     permission_classes = [PrototypeAppKeyPermission]
     parser_classes = [MultiPartParser]
@@ -186,6 +189,7 @@ class ReceiptScanView(APIView):
             status='success',
         )
 
+        line_items = _extract_line_items(veryfi_data)
         used = quota.count
         return Response(
             {
@@ -194,6 +198,7 @@ class ReceiptScanView(APIView):
                 'vendor': vendor,
                 'veryfiCategory': veryfi_category,
                 'veryfiDocumentId': veryfi_id,
+                'lineItems': line_items,
                 'quota': {
                     'limit': limit,
                     'used': used,
@@ -342,3 +347,24 @@ class QuotaView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class ReceiptLineItemsView(APIView):
+    """Return line items for a previously scanned receipt by veryfi_document_id.
+
+    Reads from the stored raw_response on ReceiptScan, so no additional
+    Veryfi API quota is consumed.
+    """
+    permission_classes = [PrototypeAppKeyPermission]
+
+    def get(self, request, veryfi_document_id):
+        try:
+            scan = ReceiptScan.objects.get(veryfi_document_id=veryfi_document_id)
+        except ReceiptScan.DoesNotExist:
+            return Response(
+                {'error': 'Receipt not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        line_items = _extract_line_items(scan.raw_response or {})
+        return Response({'lineItems': line_items}, status=status.HTTP_200_OK)
