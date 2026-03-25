@@ -21,8 +21,8 @@ jobs:
           script: |
             cd ~/Capstone_Backend
             git pull origin main
-            make dev-down
-            make dev-build
+            sudo make dev-down
+            sudo make dev-build
             sudo systemctl restart nginx
-            make dev-up-d
-            make dev-migrate
+            sudo make dev-up-d
+            sudo make dev-migrate
