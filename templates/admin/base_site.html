@@ -1,0 +1,31 @@
+{% extends "admin/base.html" %}
+
+{% block branding %}
+<div id="site-name">
+  <a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a>
+</div>
+{% endblock %}
+
+{% block nav-global %}
+<div style="
+  background: var(--header-bg);
+  padding: 6px 16px;
+  display: flex;
+  gap: 20px;
+  font-size: 13px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+">
+  <a href="/api/docs/" target="_blank" rel="noopener" style="
+    color: var(--header-link-color);
+    text-decoration: none;
+    font-weight: 500;
+    opacity: 0.85;
+  ">&#128196; Swagger API Docs</a>
+  <a href="/api/redoc/" target="_blank" rel="noopener" style="
+    color: var(--header-link-color);
+    text-decoration: none;
+    font-weight: 500;
+    opacity: 0.85;
+  ">&#128214; ReDoc</a>
+</div>
+{% endblock %}

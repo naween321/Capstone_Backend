@@ -11,9 +11,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',
 ]
 
-LOCAL_APPS = ['apps.user', 'apps.authentication', 'apps.commons', 'apps.expenses', 'apps.notifications']
+LOCAL_APPS = ['apps.user', 'apps.authentication', 'apps.commons', 'apps.expenses', 'apps.notifications', 'apps.aliases']
 THIRD_PARTY_APPS = ['rest_framework', ]
 INSTALLED_APPS += THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -32,8 +33,7 @@ ROOT_URLCONF = 'LifeLog.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': []
-        ,
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
