@@ -10,10 +10,10 @@ from rest_framework.views import APIView
 from groq import Groq
 from drf_spectacular.utils import extend_schema
 
-
 from .models import DeviceToken
-from .serializers import DeviceTokenSerializer, ScheduleTodoSerializer, AnalyzeMoodSerializer
+from .serializers import DeviceTokenSerializer, ScheduleTodoSerializer, AnalyzeMoodSerializer, MoodReminderRuleSerializer
 from .firebase import send_multicast_notification, send_scheduled_notification
+from .scheduler import upsert_mood_reminder
 
 
 class DeviceTokenView(APIView):
@@ -113,20 +113,65 @@ class AnalyzeMoodView(APIView):
     @extend_schema(
         request=AnalyzeMoodSerializer,
         description="Analyze user mood and return a comforting message"
-    ) # This extend schema is just for the Swagger view to display DTO
+    )  # This extend schema is just for the Swagger view to display DTO
     def post(self, *args, **kwargs):
         ser = AnalyzeMoodSerializer(data=self.request.data)
+        prompt_for = self.request.query_params.get('for')
         if ser.is_valid():
             client = Groq(api_key=settings.GROQ_API_KEY)
-            mood = ser.validated_data['mood']
-            description = ser.validated_data['description']
+            mood = ser.validated_data.get('mood')
+            description = ser.validated_data.get('description')
+            persistence = ser.validated_data.get("persistence")
+            energy = ser.validated_data.get('energy')
+            if prompt_for == "main_page":
+                prompt = f"""
+                You are an insightful and supportive mental wellness assistant.
+
+                User Mood History:
+                {persistence}
+
+                Task:
+                Analyze the user's overall emotional patterns based on their mood history.
+
+                Guidelines:
+                - Identify trends (e.g., improving, declining, fluctuating).
+                - Highlight any noticeable patterns (e.g., frequent stress, consistent happiness, mood swings).
+                - Mention possible triggers if they can be inferred from patterns.
+                - Keep the tone neutral, supportive, and non-judgmental.
+                - Do NOT provide medical or clinical advice.
+                - Keep the response concise (80–120 words).
+                - Focus on insights, not just repeating the data.
+
+                Output Format:
+                - Overall Trend:
+                - Key Observations:
+                - Gentle Suggestion:
+                """
+            else:
+                prompt = f"""
+                You are a supportive and empathetic mental health assistant.
+    
+                User Information:
+                - Current Mood: {mood}
+                - Energy Level: {energy}
+                - User Description: {description}
+    
+                Recent Mood History (last few entries):
+                {persistence}
+    
+                Instructions:
+                - Acknowledge the user's current feelings.
+                - Consider patterns from their recent mood history.
+                - Respond in a warm, caring, and encouraging tone.
+                - Do NOT sound robotic or overly clinical.
+                - Keep the response concise (50–60 words).
+                - Offer gentle reassurance or a small helpful suggestion if appropriate.
+    
+                Response:
+            """
             chat_completion = client.chat.completions.create(
                 messages=[
-                    {"role": "user",
-                     "content": f"The user's mood is {mood} and the explanation the user has given is "
-                                f"'{description}'. Acknowledge this user's information and Based on this information, "
-                                f"give a comfort message to the user in "
-                                f"around 50-60 words so that the user would be more cheerful"}
+                    {"role": "user", "content": prompt}
                 ],
                 model="llama-3.3-70b-versatile",
             )
@@ -134,3 +179,44 @@ class AnalyzeMoodView(APIView):
                 "message": chat_completion.choices[0].message.content
             })
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+DAY_MAP = {
+    "monday": "1", "tuesday": "2", "wednesday": "3",
+    "thursday": "4", "friday": "5", "saturday": "6", "sunday": "0",
+}
+
+
+class MoodReminderRuleView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=MoodReminderRuleSerializer,
+        description="Analyze user mood and return a comforting message"
+    )
+    def post(self, request):
+        """
+        Expected payload:
+        {
+            "time": "20:30",           // HH:MM in user's local time (handle TZ server-side as needed)
+            "days": ["monday", "wednesday", "friday"]
+        }
+        """
+        serializer = MoodReminderRuleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        time_obj = serializer.validated_data["time"]
+        days = serializer.validated_data["days"]
+        device_id = serializer.validated_data["device_id"]
+
+        days_of_week = ",".join(DAY_MAP[d] for d in days)
+        if not days_of_week:
+            return Response({"error": "No valid days provided."}, status=400)
+
+        upsert_mood_reminder(
+            device_id=device_id,
+            hour=time_obj.hour,
+            minute=time_obj.minute,
+            days_of_week=days_of_week,
+        )
+        return Response({"message": "Reminder scheduled."}, status=status.HTTP_200_OK)

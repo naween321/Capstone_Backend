@@ -15,7 +15,7 @@ INSTALLED_APPS = [
 ]
 
 LOCAL_APPS = ['apps.user', 'apps.authentication', 'apps.commons', 'apps.expenses', 'apps.notifications', 'apps.aliases']
-THIRD_PARTY_APPS = ['rest_framework', ]
+THIRD_PARTY_APPS = ['rest_framework', 'django_celery_beat', ]
 INSTALLED_APPS += THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
@@ -124,3 +124,5 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = 'America/New_York'
 CELERY_ENABLE_UTC = True
+CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
