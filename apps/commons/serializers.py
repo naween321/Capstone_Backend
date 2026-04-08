@@ -31,6 +31,17 @@ class ScheduleTodoSerializer(serializers.Serializer):
     device_id = serializers.IntegerField()
 
 
-class AnalyzeMoodSerializer(serializers.Serializer):
+class MoodHistorySerializer(serializers.Serializer):
+    date = serializers.DateTimeField()
     mood = serializers.CharField()
-    description = serializers.CharField()
+    tags = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    energy = serializers.CharField()
+
+
+class AnalyzeMoodSerializer(serializers.Serializer):
+    mood = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    energy = serializers.CharField(required=False, allow_blank=True)
+    tags = serializers.ListField(child=serializers.CharField(), allow_empty=True, required=False)
+    persistence = MoodHistorySerializer(many=True)

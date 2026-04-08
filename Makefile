@@ -85,7 +85,7 @@ dev-superuser:
 
 dev-test:
 	@echo "Running tests..."
-	$(DEV_COMPOSE) exec web uv run pytest
+	$(DEV_COMPOSE) exec web uv run python manage.py test
 
 dev-collectstatic:
 	@echo "Collecting static files..."
