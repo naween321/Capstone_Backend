@@ -15,7 +15,7 @@ INSTALLED_APPS = [
 ]
 
 LOCAL_APPS = ['apps.user', 'apps.authentication', 'apps.commons', 'apps.expenses', 'apps.notifications', 'apps.aliases']
-THIRD_PARTY_APPS = ['rest_framework', ]
+THIRD_PARTY_APPS = ['rest_framework', 'django_celery_beat', ]
 INSTALLED_APPS += THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [

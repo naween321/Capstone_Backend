@@ -80,3 +80,21 @@ def send_scheduled_notification(self, device_id: int, title: str, notification: 
         logger.warning(f"Deactivated stale token for device id={device_id}")
 
     return result
+
+
+@shared_task(bind=True, max_retries=3)
+def send_mood_reminder(self, device_id: int):
+    try:
+        device = DeviceToken.objects.get(id=device_id, is_active=True)
+    except DeviceToken.DoesNotExist:
+        logger.warning(f"DeviceToken id={device_id} not found or inactive. Skipping.")
+        return {"success": False, "error": "device_not_found"}
+    try:
+
+        send_push_notification(
+            token=device.token,
+            title="How are you feeling?",
+            body="Take a moment to log your mood.",
+        )
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=60)
