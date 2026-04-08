@@ -13,7 +13,7 @@ from drf_spectacular.utils import extend_schema
 from .models import DeviceToken
 from .serializers import DeviceTokenSerializer, ScheduleTodoSerializer, AnalyzeMoodSerializer, MoodReminderRuleSerializer
 from .firebase import send_multicast_notification, send_scheduled_notification
-from .scheduler import upsert_mood_reminder, delete_mood_reminder
+from .scheduler import upsert_mood_reminder
 
 
 class DeviceTokenView(APIView):
