@@ -47,20 +47,24 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"        # adjust to your version
+          python-version: "3.13"
           cache: "pip"
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv sync
 
       - name: Run tests
-        run: python manage.py test --verbosity=2
+        run: uv run python manage.py test --verbosity=2
 
 
   deploy:
     name: SSH & Deploy
     runs-on: ubuntu-latest
     environment: CapstoneCICDEnvironment
+    needs: test
 
     steps:
       - name: Deploy to EC2 via SSH
