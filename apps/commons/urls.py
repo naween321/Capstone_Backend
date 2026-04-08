@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import DeviceTokenView, ScheduleTodoView, DailyQuoteView, AnalyzeMoodView
-
+print("Hello")
 
 urlpatterns = [
     path('token/', DeviceTokenView.as_view(), name='register-token'),
