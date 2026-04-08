@@ -11,8 +11,9 @@ from groq import Groq
 from drf_spectacular.utils import extend_schema
 
 from .models import DeviceToken
-from .serializers import DeviceTokenSerializer, ScheduleTodoSerializer, AnalyzeMoodSerializer
+from .serializers import DeviceTokenSerializer, ScheduleTodoSerializer, AnalyzeMoodSerializer, MoodReminderRuleSerializer
 from .firebase import send_multicast_notification, send_scheduled_notification
+from .scheduler import upsert_mood_reminder
 
 
 class DeviceTokenView(APIView):
@@ -178,3 +179,44 @@ class AnalyzeMoodView(APIView):
                 "message": chat_completion.choices[0].message.content
             })
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+DAY_MAP = {
+    "monday": "1", "tuesday": "2", "wednesday": "3",
+    "thursday": "4", "friday": "5", "saturday": "6", "sunday": "0",
+}
+
+
+class MoodReminderRuleView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=MoodReminderRuleSerializer,
+        description="Analyze user mood and return a comforting message"
+    )
+    def post(self, request):
+        """
+        Expected payload:
+        {
+            "time": "20:30",           // HH:MM in user's local time (handle TZ server-side as needed)
+            "days": ["monday", "wednesday", "friday"]
+        }
+        """
+        serializer = MoodReminderRuleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        time_obj = serializer.validated_data["time"]
+        days = serializer.validated_data["days"]
+        device_id = serializer.validated_data["device_id"]
+
+        days_of_week = ",".join(DAY_MAP[d] for d in days)
+        if not days_of_week:
+            return Response({"error": "No valid days provided."}, status=400)
+
+        upsert_mood_reminder(
+            device_id=device_id,
+            hour=time_obj.hour,
+            minute=time_obj.minute,
+            days_of_week=days_of_week,
+        )
+        return Response({"message": "Reminder scheduled."}, status=status.HTTP_200_OK)
