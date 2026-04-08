@@ -1,1 +1,4 @@
-from .env import *
+try:
+    from .env import *
+except ModuleNotFoundError:
+    from .test import *
