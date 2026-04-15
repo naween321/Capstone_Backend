@@ -1,5 +1,3 @@
-from datetime import timedelta
-from django.utils import timezone
 from django.conf import settings
 
 from rest_framework import status
@@ -10,10 +8,14 @@ from rest_framework.views import APIView
 from groq import Groq
 from drf_spectacular.utils import extend_schema
 
-from .models import DeviceToken
-from .serializers import DeviceTokenSerializer, ScheduleTodoSerializer, AnalyzeMoodSerializer, MoodReminderRuleSerializer
-from .firebase import send_multicast_notification, send_scheduled_notification
-from .scheduler import upsert_mood_reminder
+from .models import DeviceToken, GratitudePrompt
+from .serializers import (
+    DeviceTokenSerializer,
+    AnalyzeMoodSerializer,
+    GratitudePreferenceSerializer,
+)
+from .firebase import send_multicast_notification
+from .tasks import fetch_daily_gratitude_prompt
 
 
 class DeviceTokenView(APIView):
@@ -54,43 +56,6 @@ def send_to_self(request):
     return Response(result)
 
 
-class ScheduleTodoView(APIView):
-    permission_classes = [AllowAny, ]
-
-    def post(self, *args, **kwargs):
-        ser = ScheduleTodoSerializer(data=self.request.data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        data = ser.validated_data
-
-        date_time = data["date_time"]
-        if timezone.is_naive(date_time):
-            date_time = timezone.make_aware(date_time)  # attaches Django's current TZ
-
-        notify_at = date_time - timedelta(minutes=10)
-        print(f"Scheduling notification at: {notify_at}")
-
-        task = send_scheduled_notification.apply_async(
-            kwargs={
-                "device_id": data["device_id"],
-                "title": "Todo Task Reminder",
-                "notification": data["notification"]
-            },
-            eta=notify_at,
-        )
-
-        return Response(
-            {
-                "detail": "Notification scheduled.",
-                "task_id": task.id,
-                "todo_starts_at": data["date_time"],
-                "notify_at": notify_at,
-            },
-            status=status.HTTP_201_CREATED,
-        )
-
-
 class DailyQuoteView(APIView):
     def get(self, *args, **kwargs):
         client = Groq(api_key=settings.GROQ_API_KEY)
@@ -106,6 +71,69 @@ class DailyQuoteView(APIView):
         return Response({
             "quote": chat_completion.choices[0].message.content
         })
+
+
+class GratitudePreferenceView(APIView):
+    """Persist a device's gratitude reminder mode + IANA timezone.
+
+    The hourly dispatcher uses these fields to know which devices to push
+    today's prompt to and at what local hour.
+    """
+    permission_classes = [AllowAny, ]
+
+    def post(self, request):
+        ser = GratitudePreferenceSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        token = ser.validated_data['token']
+        try:
+            device = DeviceToken.objects.get(token=token)
+        except DeviceToken.DoesNotExist:
+            return Response(
+                {"detail": "Unknown device token."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        device.gratitude_mode = ser.validated_data['mode']
+        tz = ser.validated_data.get('timezone')
+        if tz:
+            device.timezone = tz
+        device.save(update_fields=['gratitude_mode', 'timezone', 'updated_at'])
+        return Response(
+            {
+                "token": device.token[:20] + "...",
+                "gratitude_mode": device.gratitude_mode,
+                "timezone": device.timezone,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class GratitudePromptView(APIView):
+    """Return today's cached gratitude prompt for the in-app fetch path.
+
+    Matches the frontend's existing ``$baseUrl/api/gratitude/prompt/`` call.
+    Triggers a synchronous Groq fetch as a fallback if today's row isn't
+    cached yet (e.g., the daily celery task hasn't run yet on a fresh DB).
+    """
+    permission_classes = [AllowAny, ]
+
+    def get(self, request):
+        from django.utils import timezone as dj_timezone
+
+        today = dj_timezone.now().date()
+        row = GratitudePrompt.objects.filter(date=today).first()
+        if row and row.prompt:
+            return Response({"date": str(today), "prompt": row.prompt})
+
+        # Fall back: synchronously fetch + cache so the user always gets a prompt.
+        result = fetch_daily_gratitude_prompt()
+        prompt = (result or {}).get("prompt") or ""
+        if not prompt:
+            latest = GratitudePrompt.objects.order_by('-date').first()
+            prompt = latest.prompt if latest else ""
+        return Response({"date": str(today), "prompt": prompt})
 
 
 class AnalyzeMoodView(APIView):
@@ -179,44 +207,3 @@ class AnalyzeMoodView(APIView):
                 "message": chat_completion.choices[0].message.content
             })
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-DAY_MAP = {
-    "monday": "1", "tuesday": "2", "wednesday": "3",
-    "thursday": "4", "friday": "5", "saturday": "6", "sunday": "0",
-}
-
-
-class MoodReminderRuleView(APIView):
-    permission_classes = [AllowAny]
-
-    @extend_schema(
-        request=MoodReminderRuleSerializer,
-        description="Analyze user mood and return a comforting message"
-    )
-    def post(self, request):
-        """
-        Expected payload:
-        {
-            "time": "20:30",           // HH:MM in user's local time (handle TZ server-side as needed)
-            "days": ["monday", "wednesday", "friday"]
-        }
-        """
-        serializer = MoodReminderRuleSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        time_obj = serializer.validated_data["time"]
-        days = serializer.validated_data["days"]
-        device_id = serializer.validated_data["device_id"]
-
-        days_of_week = ",".join(DAY_MAP[d] for d in days)
-        if not days_of_week:
-            return Response({"error": "No valid days provided."}, status=400)
-
-        upsert_mood_reminder(
-            device_id=device_id,
-            hour=time_obj.hour,
-            minute=time_obj.minute,
-            days_of_week=days_of_week,
-        )
-        return Response({"message": "Reminder scheduled."}, status=status.HTTP_200_OK)

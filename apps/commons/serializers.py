@@ -1,14 +1,19 @@
 from rest_framework import serializers
 from .models import DeviceToken
 
-VALID_DAYS = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
-
 
 class DeviceTokenSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceToken
-        fields = ['id', 'token', 'platform', 'is_active', 'created_at']
+        fields = [
+            'id', 'token', 'platform', 'is_active', 'created_at',
+            'gratitude_mode', 'timezone',
+        ]
         read_only_fields = ['id', 'created_at', 'is_active']
+        extra_kwargs = {
+            'gratitude_mode': {'required': False},
+            'timezone': {'required': False},
+        }
 
     def create(self, validated_data):
         token, _ = DeviceToken.objects.update_or_create(
@@ -18,27 +23,18 @@ class DeviceTokenSerializer(serializers.ModelSerializer):
         return token
 
 
-class SendNotificationSerializer(serializers.Serializer):
-    title = serializers.CharField(max_length=200)
-    body = serializers.CharField()
-    data = serializers.DictField(child=serializers.CharField(), required=False)
-    user_ids = serializers.ListField(
-        child=serializers.IntegerField(), required=False
-    )
-
-
-class ScheduleTodoSerializer(serializers.Serializer):
-    notification = serializers.CharField()
-    date_time = serializers.DateTimeField()
-    device_id = serializers.IntegerField()
+class GratitudePreferenceSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    mode = serializers.ChoiceField(choices=['on_release', 'scheduled'])
+    timezone = serializers.CharField(required=False, allow_blank=True)
 
 
 class MoodHistorySerializer(serializers.Serializer):
     date = serializers.DateTimeField()
     mood = serializers.CharField()
-    tags = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    tags = serializers.ListField(child=serializers.CharField(), allow_empty=True, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
-    energy = serializers.CharField()
+    energy = serializers.CharField(required=False, allow_blank=True)
 
 
 class AnalyzeMoodSerializer(serializers.Serializer):
@@ -47,24 +43,3 @@ class AnalyzeMoodSerializer(serializers.Serializer):
     energy = serializers.CharField(required=False, allow_blank=True)
     tags = serializers.ListField(child=serializers.CharField(), allow_empty=True, required=False)
     persistence = MoodHistorySerializer(many=True)
-
-
-class MoodReminderRuleSerializer(serializers.Serializer):
-    time = serializers.TimeField(format="%H:%M", input_formats=["%H:%M"])
-    days = serializers.ListField(
-        child=serializers.ChoiceField(choices=list(VALID_DAYS)),
-        min_length=1,
-        max_length=7,
-    )
-    device_id = serializers.IntegerField()
-
-    def validate_days(self, value):
-        normalized = [day.lower() for day in value]
-        invalid = [day for day in normalized if day not in VALID_DAYS]
-        if invalid:
-            raise serializers.ValidationError(
-                f"Invalid day(s): {', '.join(invalid)}. Must be full lowercase day names."
-            )
-        if len(normalized) != len(set(normalized)):
-            raise serializers.ValidationError("Duplicate days are not allowed.")
-        return normalized

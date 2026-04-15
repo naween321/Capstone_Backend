@@ -2,9 +2,7 @@ import firebase_admin
 from firebase_admin import credentials, messaging
 from django.conf import settings
 
-from celery import shared_task
 from celery.utils.log import get_task_logger
-from .models import DeviceToken
 
 _app = None
 logger = get_task_logger(__name__)
@@ -44,57 +42,38 @@ def send_multicast_notification(tokens: list, title: str, body: str, data: dict 
     """Send push notification to multiple devices."""
     get_firebase_app()
 
-    message = messaging.MulticastMessage(
-        notification=messaging.Notification(title=title, body=body),
-        data=data or {},
-        tokens=tokens,
-    )
+    # FCM caps multicast batches at 500 tokens.
+    BATCH = 500
+    success_count = 0
+    failure_count = 0
+    for i in range(0, len(tokens), BATCH):
+        chunk = tokens[i:i + BATCH]
+        if not chunk:
+            continue
+        message = messaging.MulticastMessage(
+            notification=messaging.Notification(title=title, body=body),
+            data={k: str(v) for k, v in (data or {}).items()},
+            tokens=chunk,
+        )
+        response = messaging.send_each_for_multicast(message)
+        success_count += response.success_count
+        failure_count += response.failure_count
 
-    response = messaging.send_each_for_multicast(message)
     return {
-        "success_count": response.success_count,
-        "failure_count": response.failure_count,
+        "success_count": success_count,
+        "failure_count": failure_count,
     }
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def send_scheduled_notification(self, device_id: int, title: str, notification: str):
-    """
-    Scheduled task — fires at the exact eta provided by ScheduleTodoView.
-    """
-    try:
-        device = DeviceToken.objects.get(id=device_id, is_active=True)
-    except DeviceToken.DoesNotExist:
-        logger.warning(f"DeviceToken id={device_id} not found or inactive. Skipping.")
-        return {"success": False, "error": "device_not_found"}
-
-    result = send_push_notification(
-        token=device.token,
-        title=title,
-        body=notification,
+def send_gratitude_release(prompt: str, tokens: list):
+    """Multicast today's gratitude prompt to a cohort of on-release tokens."""
+    if not tokens:
+        return {"success_count": 0, "failure_count": 0}
+    return send_multicast_notification(
+        tokens=tokens,
+        title="Today's gratitude prompt",
+        body=prompt,
+        data={"type": "gratitude", "prompt": prompt},
     )
 
-    # Deactivate stale token
-    if not result["success"] and result.get("error") in ("unregistered", "invalid_token"):
-        DeviceToken.objects.filter(id=device_id).update(is_active=False)
-        logger.warning(f"Deactivated stale token for device id={device_id}")
 
-    return result
-
-
-@shared_task(bind=True, max_retries=3)
-def send_mood_reminder(self, device_id: int):
-    try:
-        device = DeviceToken.objects.get(id=device_id, is_active=True)
-    except DeviceToken.DoesNotExist:
-        logger.warning(f"DeviceToken id={device_id} not found or inactive. Skipping.")
-        return {"success": False, "error": "device_not_found"}
-    try:
-
-        send_push_notification(
-            token=device.token,
-            title="How are you feeling?",
-            body="Take a moment to log your mood.",
-        )
-    except Exception as exc:
-        raise self.retry(exc=exc, countdown=60)

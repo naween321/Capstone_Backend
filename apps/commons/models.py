@@ -45,12 +45,34 @@ class DeviceToken(TimeStampModel):
         ('ios', 'iOS'),
         ('web', 'Web'),
     ]
+    GRATITUDE_MODE_CHOICES = [
+        ('on_release', 'On prompt release'),
+        ('scheduled', 'Scheduled'),
+    ]
     token = models.TextField(unique=True)
     platform = models.CharField(max_length=10, choices=PLATFORM_CHOICES)
     is_active = models.BooleanField(default=True)
+    gratitude_mode = models.CharField(
+        max_length=16,
+        choices=GRATITUDE_MODE_CHOICES,
+        default='on_release',
+    )
+    timezone = models.CharField(max_length=64, default='UTC')
 
     class Meta:
         ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.platform} ({self.token[:20]}...)"
+
+
+class GratitudePrompt(TimeStampModel):
+    """Server-cached daily gratitude prompt fanned out to on_release devices."""
+    date = models.DateField(unique=True)
+    prompt = models.TextField()
+
+    class Meta:
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"GratitudePrompt({self.date})"
