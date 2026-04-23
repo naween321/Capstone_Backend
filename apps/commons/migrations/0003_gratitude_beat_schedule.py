@@ -74,7 +74,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('commons', '0002_gratitude_release'),
-        ('django_celery_beat', '0001_initial'),
+        ('django_celery_beat', '0019_alter_periodictasks_options'),
     ]
 
     operations = [
