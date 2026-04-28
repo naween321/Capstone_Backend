@@ -39,20 +39,44 @@ logger = get_task_logger(__name__)
 GRATITUDE_RELEASE_LOCAL_HOUR = 18  # 6pm in each device's local timezone
 
 GRATITUDE_PROMPT_INSTRUCTION = (
-    "Give a single short gratitude journal prompt (one sentence, under 20 words). "
-    "It should invite reflection on something the user is thankful for. "
-    "Do not number it. Do not add quotation marks. Do not add commentary or attribution. "
-    "Return only the prompt itself."
+    "Generate a single gratitude journal prompt (one sentence, under 20 words). "
+    "Vary the angle across calls: people and relationships, sensory moments, places, "
+    "personal growth, small wins, challenges weathered, future hope, simple comforts, "
+    "things often taken for granted. "
+    "Vary the form: open questions, 'name three...', 'describe a moment when...', "
+    "fill-in-the-blank ('I'm grateful for ___ because ___'), or a short directive. "
+    "Vary the time horizon: today, this week, recently, this year, or ever. "
+    "Do not number it. Do not wrap it in quotation marks. Do not add commentary, "
+    "preamble, or attribution. Return only the prompt itself."
 )
+
+RECENT_PROMPT_LOOKBACK = 30
 
 
 def _generate_prompt_from_groq() -> str:
     from groq import Groq
 
+    recent = list(
+        GratitudePrompt.objects
+        .order_by('-date')
+        .values_list('prompt', flat=True)[:RECENT_PROMPT_LOOKBACK]
+    )
+    user_content = GRATITUDE_PROMPT_INSTRUCTION
+    if recent:
+        avoid_block = "\n".join(f"- {p}" for p in recent if p)
+        user_content = (
+            f"{GRATITUDE_PROMPT_INSTRUCTION}\n\n"
+            "Do NOT repeat, rephrase, or echo the structure of any of the recent "
+            "prompts below. Pick a clearly different angle, form, and opening word.\n"
+            f"{avoid_block}"
+        )
+
     client = Groq(api_key=settings.GROQ_API_KEY)
     completion = client.chat.completions.create(
-        messages=[{"role": "user", "content": GRATITUDE_PROMPT_INSTRUCTION}],
+        messages=[{"role": "user", "content": user_content}],
         model="llama-3.3-70b-versatile",
+        temperature=1.1,
+        top_p=0.95,
     )
     text = (completion.choices[0].message.content or "").strip()
     # Strip stray wrapping quotes the model sometimes adds.
